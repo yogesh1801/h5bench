@@ -12,6 +12,7 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
 
 find_package(Python REQUIRED)
 find_package(MPI REQUIRED)
+find_package(CUDAToolkit REQUIRED)
 
 include_directories(SYSTEM ${MPI_INCLUDE_PATH})
 
@@ -72,7 +73,9 @@ find_package(HDF5 REQUIRED)
 message(STATUS "Using HDF5 version: ${HDF5_VERSION}")
 
 include_directories(${HDF5_HOME}/include)
+include_directories(/usr/include/hdf5/serial)
 link_directories(${HDF5_HOME}/lib)
+link_directories(/usr/lib/x86_64-linux-gnu/hdf5/serial)
 
 # Check if HDF5 has subfiling VFD
 set(HAVE_subfiling 0)
@@ -115,6 +118,8 @@ set(h5bench_util_src
 )
 
 add_library(h5bench_util ${h5bench_util_src})
+target_link_libraries(h5bench_util CUDA::cudart)
+target_include_directories(h5bench_util PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
 
 if(WITH_ASYNC_VOL)
     target_link_libraries(h5bench_util asynchdf5 h5async)
@@ -126,7 +131,7 @@ endif()
 set(h5bench_write_normal_dist_src h5bench_patterns/h5bench_write_normal_dist.c)
 
 add_executable(h5bench_write_var_normal_dist ${h5bench_write_normal_dist_src})
-target_link_libraries(h5bench_write_var_normal_dist h5bench_util hdf5 z m ${CMAKE_DL_LIBS} MPI::MPI_C) 
+target_link_libraries(h5bench_write_var_normal_dist h5bench_util hdf5 z m ${CMAKE_DL_LIBS} MPI::MPI_C CUDA::cudart) 
 
 # h5bench WRITE ###############################################################
 #
@@ -134,7 +139,7 @@ target_link_libraries(h5bench_write_var_normal_dist h5bench_util hdf5 z m ${CMAK
 set(h5bench_write_src h5bench_patterns/h5bench_write.c)
 
 add_executable(h5bench_write ${h5bench_write_src})
-target_link_libraries(h5bench_write h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::MPI_C) 
+target_link_libraries(h5bench_write h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::MPI_C CUDA::cudart) 
 
 # h5bench WRITE UNLIMITED #####################################################
 #
@@ -142,7 +147,7 @@ target_link_libraries(h5bench_write h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::MP
 set(h5bench_write_unlimited_src h5bench_patterns/h5bench_write_unlimited.c)
 
 add_executable(h5bench_write_unlimited ${h5bench_write_unlimited_src})
-target_link_libraries(h5bench_write_unlimited h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::MPI_C) 
+target_link_libraries(h5bench_write_unlimited h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::MPI_C CUDA::cudart) 
 
 # h5bench OVERWRITE ###########################################################
 #
@@ -150,7 +155,7 @@ target_link_libraries(h5bench_write_unlimited h5bench_util hdf5 z ${CMAKE_DL_LIB
 set(h5bench_overwrite_src h5bench_patterns/h5bench_overwrite.c)
 
 add_executable(h5bench_overwrite ${h5bench_overwrite_src})
-target_link_libraries(h5bench_overwrite h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::MPI_C)
+target_link_libraries(h5bench_overwrite h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::MPI_C CUDA::cudart)
 
 # h5bench APPEND ##############################################################
 #
@@ -158,7 +163,7 @@ target_link_libraries(h5bench_overwrite h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI
 set(h5bench_append_src h5bench_patterns/h5bench_append.c)
 
 add_executable(h5bench_append ${h5bench_append_src})
-target_link_libraries(h5bench_append h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::MPI_C)
+target_link_libraries(h5bench_append h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::MPI_C CUDA::cudart)
 
 # h5bench READ ################################################################
 #
@@ -166,7 +171,7 @@ target_link_libraries(h5bench_append h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::M
 set(h5bench_read_src h5bench_patterns/h5bench_read.c)
 
 add_executable(h5bench_read ${h5bench_read_src})
-target_link_libraries(h5bench_read h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::MPI_C)
+target_link_libraries(h5bench_read h5bench_util hdf5 z ${CMAKE_DL_LIBS} MPI::MPI_C CUDA::cudart)
 
 
 # Exerciser ###################################################################
@@ -196,7 +201,7 @@ if(H5BENCH_METADATA)
 
     add_executable(h5bench_hdf5_iotest ${meta_stress_src})
 
-    target_link_libraries(h5bench_hdf5_iotest h5bench_util hdf5 z m ${CMAKE_DL_LIBS} MPI::MPI_C)
+    target_link_libraries(h5bench_hdf5_iotest h5bench_util hdf5 z m ${CMAKE_DL_LIBS} MPI::MPI_C CUDA::cudart)
 endif()
 
 # AMReX #######################################################################
@@ -232,7 +237,7 @@ endif()
 if(H5BENCH_E3SM)
     ExternalProject_Add(h5bench_e3sm
         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/e3sm
-        CONFIGURE_COMMAND autoreconf -i COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/e3sm/configure --prefix=${CMAKE_BINARY_DIR} --with-hdf5=${HDF5_HOME} CFLAGS=-fno-var-tracking-assignments CXXFLAGS=-fno-var-tracking-assignments
+        CONFIGURE_COMMAND autoreconf -i COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/e3sm/configure --prefix=${CMAKE_BINARY_DIR} --with-hdf5=${HDF5_HOME}
         BUILD_COMMAND make -j 1
         INSTALL_COMMAND ${CMAKE_COMMAND} -E copy src/e3sm_io ${CMAKE_BINARY_DIR}/h5bench_e3sm 
         BUILD_IN_SOURCE 1

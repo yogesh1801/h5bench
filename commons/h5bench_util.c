@@ -15,6 +15,7 @@
 #include <assert.h>
 #include <sys/time.h>
 #include <hdf5.h>
+#include <cuda_runtime.h>
 
 #ifdef USE_ASYNC_VOL
 #include <H5VLconnector.h>
@@ -364,14 +365,49 @@ prepare_contig_memory(long particle_cnt, long dim_1, long dim_2, long dim_3)
     buf_struct->dim_1          = dim_1;
     buf_struct->dim_2          = dim_2;
     buf_struct->dim_3          = dim_3;
-    buf_struct->x              = (float *)malloc(particle_cnt * sizeof(float));
-    buf_struct->y              = (float *)malloc(particle_cnt * sizeof(float));
-    buf_struct->z              = (float *)malloc(particle_cnt * sizeof(float));
-    buf_struct->px             = (float *)malloc(particle_cnt * sizeof(float));
-    buf_struct->py             = (float *)malloc(particle_cnt * sizeof(float));
-    buf_struct->pz             = (float *)malloc(particle_cnt * sizeof(float));
-    buf_struct->id_1           = (int *)malloc(particle_cnt * sizeof(int));
-    buf_struct->id_2           = (float *)malloc(particle_cnt * sizeof(float));
+    
+    cudaError_t err;
+    err = cudaMalloc((void **)&buf_struct->x, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for x: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->y, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for y: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->z, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for z: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->px, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for px: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->py, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for py: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->pz, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for pz: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->id_1, particle_cnt * sizeof(int));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for id_1: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->id_2, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for id_2: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    
     return buf_struct;
 }
 
@@ -385,14 +421,49 @@ prepare_contig_memory_multi_dim(unsigned long long dim_1, unsigned long long dim
     unsigned long long num_particles = dim_1 * dim_2 * dim_3;
 
     buf_struct->particle_cnt = num_particles;
-    buf_struct->x            = (float *)malloc(num_particles * sizeof(float));
-    buf_struct->y            = (float *)malloc(num_particles * sizeof(float));
-    buf_struct->z            = (float *)malloc(num_particles * sizeof(float));
-    buf_struct->px           = (float *)malloc(num_particles * sizeof(float));
-    buf_struct->py           = (float *)malloc(num_particles * sizeof(float));
-    buf_struct->pz           = (float *)malloc(num_particles * sizeof(float));
-    buf_struct->id_1         = (int *)malloc(num_particles * sizeof(int));
-    buf_struct->id_2         = (float *)malloc(num_particles * sizeof(float));
+    
+    cudaError_t err;
+    err = cudaMalloc((void **)&buf_struct->x, num_particles * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for x: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->y, num_particles * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for y: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->z, num_particles * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for z: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->px, num_particles * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for px: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->py, num_particles * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for py: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->pz, num_particles * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for pz: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->id_1, num_particles * sizeof(int));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for id_1: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&buf_struct->id_2, num_particles * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for id_2: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    
     return buf_struct;
 }
 
@@ -400,14 +471,14 @@ void
 free_contig_memory(data_contig_md *data)
 {
     if (data) {
-        free(data->x);
-        free(data->y);
-        free(data->z);
-        free(data->px);
-        free(data->py);
-        free(data->pz);
-        free(data->id_1);
-        free(data->id_2);
+        cudaFree(data->x);
+        cudaFree(data->y);
+        cudaFree(data->z);
+        cudaFree(data->px);
+        cudaFree(data->py);
+        cudaFree(data->pz);
+        cudaFree(data->id_1);
+        cudaFree(data->id_2);
         free(data);
     }
 }
@@ -1477,4 +1548,24 @@ format_human_readable(uint64_t bytes)
     value.unit  = unit[i];
 
     return value;
+}
+
+// Function to configure HDF5 file access property list for vfd_gds
+hid_t
+configure_vfd_gds_fapl(hid_t fapl)
+{
+    if (!fapl) {
+        fapl = H5Pcreate(H5P_FILE_ACCESS);
+    }
+    
+    // Check if vfd_gds is available and configured
+    const char *hdf5_driver = getenv("HDF5_DRIVER");
+    if (hdf5_driver && strcmp(hdf5_driver, "gds") == 0) {
+        // vfd_gds is loaded as a plugin at runtime, not at compile time
+        // The H5Pset_fapl_gds function will be available when the plugin is loaded
+        printf("vfd_gds driver will be configured at runtime via HDF5_DRIVER=gds\n");
+        printf("Make sure HDF5_PLUGIN_PATH includes the vfd_gds plugin directory\n");
+    }
+    
+    return fapl;
 }
