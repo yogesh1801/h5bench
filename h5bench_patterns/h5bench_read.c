@@ -38,12 +38,14 @@
 
 #include <math.h>
 #include <hdf5.h>
+#include <H5FDmpio.h>
 #include <stdlib.h>
 #include <sys/time.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>
+#include <cuda_runtime.h>
 #include "../commons/h5bench_util.h"
 #include "../commons/async_adaptor.h"
 #include <mpi.h>

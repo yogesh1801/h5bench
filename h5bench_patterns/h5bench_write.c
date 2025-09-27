@@ -38,6 +38,7 @@
 //
 
 #include <hdf5.h>
+#include <H5FDmpio.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -46,6 +47,8 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+#include <mpi.h>
+#include <cuda_runtime.h>
 #include "../commons/h5bench_util.h"
 #include "../commons/async_adaptor.h"
 #ifdef HAVE_SUBFILING
@@ -160,20 +163,40 @@ make_compound_type_separates()
 particle *
 prepare_data_interleaved(long particle_cnt, unsigned long *data_size_out)
 {
-    particle *data_out = (particle *)malloc(particle_cnt * sizeof(particle));
+    // Allocate CPU memory for data initialization
+    particle *data_cpu = (particle *)malloc(particle_cnt * sizeof(particle));
 
     for (long i = 0; i < particle_cnt; i++) {
-        data_out[i].id_1 = i;
-        data_out[i].id_2 = (float)(2 * i);
-        data_out[i].x    = uniform_random_number() * X_DIM;
-        data_out[i].y    = uniform_random_number() * Y_DIM;
-        data_out[i].z    = ((float)i / particle_cnt) * Z_DIM;
-        data_out[i].px   = uniform_random_number() * X_DIM;
-        data_out[i].py   = uniform_random_number() * Y_DIM;
-        data_out[i].pz   = ((float)2 * i / particle_cnt) * Z_DIM;
+        data_cpu[i].id_1 = i;
+        data_cpu[i].id_2 = (float)(2 * i);
+        data_cpu[i].x    = uniform_random_number() * X_DIM;
+        data_cpu[i].y    = uniform_random_number() * Y_DIM;
+        data_cpu[i].z    = ((float)i / particle_cnt) * Z_DIM;
+        data_cpu[i].px   = uniform_random_number() * X_DIM;
+        data_cpu[i].py   = uniform_random_number() * Y_DIM;
+        data_cpu[i].pz   = ((float)2 * i / particle_cnt) * Z_DIM;
     }
+    
+    // Allocate GPU memory
+    particle *data_gpu;
+    cudaError_t err = cudaMalloc((void **)&data_gpu, particle_cnt * sizeof(particle));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for interleaved data: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    
+    // Copy data from CPU to GPU
+    err = cudaMemcpy(data_gpu, data_cpu, particle_cnt * sizeof(particle), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMemcpy failed for interleaved data: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    
+    // Free CPU memory
+    free(data_cpu);
+    
     *data_size_out = particle_cnt * sizeof(particle);
-    return data_out;
+    return data_gpu;
 }
 
 data_contig_md *
@@ -181,29 +204,94 @@ prepare_data_contig_1D(unsigned long long particle_cnt, unsigned long *data_size
 {
     data_contig_md *data_out = (data_contig_md *)malloc(sizeof(data_contig_md));
     data_out->particle_cnt   = particle_cnt;
-
-    data_out->x     = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->y     = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->z     = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->px    = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->py    = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->pz    = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->id_1  = (int *)malloc(particle_cnt * sizeof(int));
-    data_out->id_2  = (float *)malloc(particle_cnt * sizeof(float));
     data_out->dim_1 = particle_cnt;
     data_out->dim_2 = 1;
     data_out->dim_3 = 1;
 
+    // Allocate CPU memory for data initialization
+    float *x_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    float *y_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    float *z_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    float *px_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    float *py_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    float *pz_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    int *id_1_cpu = (int *)malloc(particle_cnt * sizeof(int));
+    float *id_2_cpu = (float *)malloc(particle_cnt * sizeof(float));
+
     for (long i = 0; i < particle_cnt; i++) {
-        data_out->id_1[i] = i;
-        data_out->id_2[i] = (float)(i * 2);
-        data_out->x[i]    = uniform_random_number() * X_DIM;
-        data_out->y[i]    = uniform_random_number() * Y_DIM;
-        data_out->px[i]   = uniform_random_number() * X_DIM;
-        data_out->py[i]   = uniform_random_number() * Y_DIM;
-        data_out->z[i]    = ((float)data_out->id_1[i] / NUM_PARTICLES) * Z_DIM;
-        data_out->pz[i]   = (data_out->id_2[i] / NUM_PARTICLES) * Z_DIM;
+        id_1_cpu[i] = i;
+        id_2_cpu[i] = (float)(i * 2);
+        x_cpu[i]    = uniform_random_number() * X_DIM;
+        y_cpu[i]    = uniform_random_number() * Y_DIM;
+        px_cpu[i]   = uniform_random_number() * X_DIM;
+        py_cpu[i]   = uniform_random_number() * Y_DIM;
+        z_cpu[i]    = ((float)id_1_cpu[i] / NUM_PARTICLES) * Z_DIM;
+        pz_cpu[i]   = (id_2_cpu[i] / NUM_PARTICLES) * Z_DIM;
     }
+
+    // Allocate GPU memory
+    cudaError_t err;
+    err = cudaMalloc((void **)&data_out->x, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for x: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->y, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for y: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->z, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for z: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->px, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for px: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->py, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for py: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->pz, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for pz: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->id_1, particle_cnt * sizeof(int));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for id_1: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->id_2, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for id_2: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+
+    // Copy data from CPU to GPU
+    cudaMemcpy(data_out->x, x_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->y, y_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->z, z_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->px, px_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->py, py_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->pz, pz_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->id_1, id_1_cpu, particle_cnt * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->id_2, id_2_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+
+    // Free CPU memory
+    free(x_cpu);
+    free(y_cpu);
+    free(z_cpu);
+    free(px_cpu);
+    free(py_cpu);
+    free(pz_cpu);
+    free(id_1_cpu);
+    free(id_2_cpu);
+
     *data_size_out = particle_cnt * (7 * sizeof(float) + sizeof(int));
 
     return data_out;
@@ -272,31 +360,95 @@ prepare_data_contig_3D(unsigned long long particle_cnt, long dim_1, long dim_2, 
     data_out->dim_1          = dim_1;
     data_out->dim_2          = dim_2;
     data_out->dim_3          = dim_3;
-    data_out->x              = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->y              = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->z              = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->px             = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->py             = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->pz             = (float *)malloc(particle_cnt * sizeof(float));
-    data_out->id_1           = (int *)malloc(particle_cnt * sizeof(int));
-    data_out->id_2           = (float *)malloc(particle_cnt * sizeof(float));
-    long idx                 = 0;
+    // Allocate GPU memory
+    cudaError_t err;
+    err = cudaMalloc((void **)&data_out->x, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for x: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->y, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for y: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->z, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for z: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->px, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for px: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->py, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for py: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->pz, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for pz: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->id_1, particle_cnt * sizeof(int));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for id_1: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMalloc((void **)&data_out->id_2, particle_cnt * sizeof(float));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed for id_2: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    
+    // Allocate CPU memory for data initialization
+    float *x_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    float *y_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    float *z_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    float *px_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    float *py_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    float *pz_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    int *id_1_cpu = (int *)malloc(particle_cnt * sizeof(int));
+    float *id_2_cpu = (float *)malloc(particle_cnt * sizeof(float));
+    
+    long idx = 0;
     for (long i1 = 0; i1 < dim_1; i1++) {
         for (long i2 = 0; i2 < dim_2; i2++) {
             for (long i3 = 0; i3 < dim_3; i3++) {
-                data_out->x[idx]    = uniform_random_number() * X_DIM;
-                data_out->id_1[idx] = i1;
-                data_out->id_2[idx] = (float)(i1 * 2);
-                data_out->x[idx]    = uniform_random_number() * X_DIM;
-                data_out->y[idx]    = uniform_random_number() * Y_DIM;
-                data_out->px[idx]   = uniform_random_number() * X_DIM;
-                data_out->py[idx]   = uniform_random_number() * Y_DIM;
-                data_out->z[idx]    = ((float)data_out->id_1[idx] / NUM_PARTICLES) * Z_DIM;
-                data_out->pz[idx]   = (data_out->id_2[idx] / NUM_PARTICLES) * Z_DIM;
+                id_1_cpu[idx] = i1;
+                id_2_cpu[idx] = (float)(i1 * 2);
+                x_cpu[idx]    = uniform_random_number() * X_DIM;
+                y_cpu[idx]    = uniform_random_number() * Y_DIM;
+                px_cpu[idx]   = uniform_random_number() * X_DIM;
+                py_cpu[idx]   = uniform_random_number() * Y_DIM;
+                z_cpu[idx]    = ((float)id_1_cpu[idx] / NUM_PARTICLES) * Z_DIM;
+                pz_cpu[idx]   = (id_2_cpu[idx] / NUM_PARTICLES) * Z_DIM;
                 idx++;
             }
         }
     }
+    
+    // Copy data from CPU to GPU
+    cudaMemcpy(data_out->x, x_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->y, y_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->z, z_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->px, px_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->py, py_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->pz, pz_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->id_1, id_1_cpu, particle_cnt * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(data_out->id_2, id_2_cpu, particle_cnt * sizeof(float), cudaMemcpyHostToDevice);
+    
+    // Free CPU memory
+    free(x_cpu);
+    free(y_cpu);
+    free(z_cpu);
+    free(px_cpu);
+    free(py_cpu);
+    free(pz_cpu);
+    free(id_1_cpu);
+    free(id_2_cpu);
     *data_size_out = particle_cnt * (7 * sizeof(float) + sizeof(int));
     return data_out;
 }
@@ -311,21 +463,21 @@ data_free(write_pattern mode, void *data)
         case CONTIG_COMPOUND_2D:
         case CONTIG_CONTIG_2D:
         case CONTIG_CONTIG_3D:
-            free(((data_contig_md *)data)->x);
-            free(((data_contig_md *)data)->y);
-            free(((data_contig_md *)data)->z);
-            free(((data_contig_md *)data)->px);
-            free(((data_contig_md *)data)->py);
-            free(((data_contig_md *)data)->pz);
-            free(((data_contig_md *)data)->id_1);
-            free(((data_contig_md *)data)->id_2);
+            cudaFree(((data_contig_md *)data)->x);
+            cudaFree(((data_contig_md *)data)->y);
+            cudaFree(((data_contig_md *)data)->z);
+            cudaFree(((data_contig_md *)data)->px);
+            cudaFree(((data_contig_md *)data)->py);
+            cudaFree(((data_contig_md *)data)->pz);
+            cudaFree(((data_contig_md *)data)->id_1);
+            cudaFree(((data_contig_md *)data)->id_2);
             free(((data_contig_md *)data));
             break;
         case COMPOUND_CONTIG_1D:
         case COMPOUND_CONTIG_2D:
         case COMPOUND_COMPOUND_1D:
         case COMPOUND_COMPOUND_2D:
-            free(data);
+            cudaFree(data);
             break;
         default:
             break;
@@ -475,22 +627,56 @@ data_write_contig_contig_MD_array(time_step *ts, hid_t loc, hid_t *dset_ids, hid
 
     unsigned t2 = get_time_usec();
 
+    // Copy data from GPU to CPU for HDF5 operations
+    float *x_cpu, *y_cpu, *z_cpu, *px_cpu, *py_cpu, *pz_cpu, *id_2_cpu;
+    int *id_1_cpu;
+    
+    // Allocate CPU memory
+    x_cpu = (float*)malloc(data_in->particle_cnt * sizeof(float));
+    y_cpu = (float*)malloc(data_in->particle_cnt * sizeof(float));
+    z_cpu = (float*)malloc(data_in->particle_cnt * sizeof(float));
+    px_cpu = (float*)malloc(data_in->particle_cnt * sizeof(float));
+    py_cpu = (float*)malloc(data_in->particle_cnt * sizeof(float));
+    pz_cpu = (float*)malloc(data_in->particle_cnt * sizeof(float));
+    id_1_cpu = (int*)malloc(data_in->particle_cnt * sizeof(int));
+    id_2_cpu = (float*)malloc(data_in->particle_cnt * sizeof(float));
+    
+    // Copy from GPU to CPU
+    cudaMemcpy(x_cpu, data_in->x, data_in->particle_cnt * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(y_cpu, data_in->y, data_in->particle_cnt * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(z_cpu, data_in->z, data_in->particle_cnt * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(px_cpu, data_in->px, data_in->particle_cnt * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(py_cpu, data_in->py, data_in->particle_cnt * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(pz_cpu, data_in->pz, data_in->particle_cnt * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(id_1_cpu, data_in->id_1, data_in->particle_cnt * sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(id_2_cpu, data_in->id_2, data_in->particle_cnt * sizeof(float), cudaMemcpyDeviceToHost);
+
     ierr =
-        H5Dwrite_async(dset_ids[0], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, data_in->x, ts->es_data);
+        H5Dwrite_async(dset_ids[0], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, x_cpu, ts->es_data);
     ierr =
-        H5Dwrite_async(dset_ids[1], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, data_in->y, ts->es_data);
+        H5Dwrite_async(dset_ids[1], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, y_cpu, ts->es_data);
     ierr =
-        H5Dwrite_async(dset_ids[2], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, data_in->z, ts->es_data);
-    ierr = H5Dwrite_async(dset_ids[3], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, data_in->px,
+        H5Dwrite_async(dset_ids[2], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, z_cpu, ts->es_data);
+    ierr = H5Dwrite_async(dset_ids[3], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, px_cpu,
                           ts->es_data);
-    ierr = H5Dwrite_async(dset_ids[4], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, data_in->py,
+    ierr = H5Dwrite_async(dset_ids[4], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, py_cpu,
                           ts->es_data);
-    ierr = H5Dwrite_async(dset_ids[5], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, data_in->pz,
+    ierr = H5Dwrite_async(dset_ids[5], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, pz_cpu,
                           ts->es_data);
-    ierr = H5Dwrite_async(dset_ids[6], H5T_NATIVE_INT, memspace, filespace, plist_id, data_in->id_1,
+    ierr = H5Dwrite_async(dset_ids[6], H5T_NATIVE_INT, memspace, filespace, plist_id, id_1_cpu,
                           ts->es_data);
-    ierr = H5Dwrite_async(dset_ids[7], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, data_in->id_2,
+    ierr = H5Dwrite_async(dset_ids[7], H5T_NATIVE_FLOAT, memspace, filespace, plist_id, id_2_cpu,
                           ts->es_data);
+    
+    // Free CPU memory
+    free(x_cpu);
+    free(y_cpu);
+    free(z_cpu);
+    free(px_cpu);
+    free(py_cpu);
+    free(pz_cpu);
+    free(id_1_cpu);
+    free(id_2_cpu);
 
     unsigned t3 = get_time_usec();
 
