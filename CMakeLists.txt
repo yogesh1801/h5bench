@@ -73,9 +73,7 @@ find_package(HDF5 REQUIRED)
 message(STATUS "Using HDF5 version: ${HDF5_VERSION}")
 
 include_directories(${HDF5_HOME}/include)
-include_directories(/usr/include/hdf5/serial)
 link_directories(${HDF5_HOME}/lib)
-link_directories(/usr/lib/x86_64-linux-gnu/hdf5/serial)
 
 # Check if HDF5 has subfiling VFD
 set(HAVE_subfiling 0)

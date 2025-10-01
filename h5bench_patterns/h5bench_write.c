@@ -38,7 +38,6 @@
 //
 
 #include <hdf5.h>
-#include <H5FDmpio.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -47,7 +46,6 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
-#include <mpi.h>
 #include <cuda_runtime.h>
 #include "../commons/h5bench_util.h"
 #include "../commons/async_adaptor.h"

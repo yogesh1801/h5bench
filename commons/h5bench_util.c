@@ -1549,23 +1549,3 @@ format_human_readable(uint64_t bytes)
 
     return value;
 }
-
-// Function to configure HDF5 file access property list for vfd_gds
-hid_t
-configure_vfd_gds_fapl(hid_t fapl)
-{
-    if (!fapl) {
-        fapl = H5Pcreate(H5P_FILE_ACCESS);
-    }
-    
-    // Check if vfd_gds is available and configured
-    const char *hdf5_driver = getenv("HDF5_DRIVER");
-    if (hdf5_driver && strcmp(hdf5_driver, "gds") == 0) {
-        // vfd_gds is loaded as a plugin at runtime, not at compile time
-        // The H5Pset_fapl_gds function will be available when the plugin is loaded
-        printf("vfd_gds driver will be configured at runtime via HDF5_DRIVER=gds\n");
-        printf("Make sure HDF5_PLUGIN_PATH includes the vfd_gds plugin directory\n");
-    }
-    
-    return fapl;
-}

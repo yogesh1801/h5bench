@@ -236,7 +236,4 @@ char *get_dir_from_path(char *path);
 
 human_readable format_human_readable(uint64_t bytes);
 
-// Function to configure HDF5 file access property list for vfd_gds
-hid_t configure_vfd_gds_fapl(hid_t fapl);
-
 #endif /* COMMONS_H5BENCH_UTIL_H_ */
